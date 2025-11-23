@@ -19,16 +19,16 @@
   "devDependencies": {
     "nodemon": "^3.1.0"
   },
-  "description": "",
+  "description": "Backend API for AllMuslim app (Node.js + Express + MongoDB)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/umarbature8645/allmuslim-backend.git"
+    "url": "git+https://github.com/fakruddeenfarouqk/allmuslim-backend.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["nodejs", "express", "mongodb", "backend", "api"],
+  "author": "Umar Farouq",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/umarbature8645/allmuslim-backend/issues"
+    "url": "https://github.com/fakruddeenfarouqk/allmuslim-backend/issues"
   },
-  "homepage": "https://github.com/umarbature8645/allmuslim-backend#readme"
+  "homepage": "https://github.com/fakruddeenfarouqk/allmuslim-backend#readme"
 }
