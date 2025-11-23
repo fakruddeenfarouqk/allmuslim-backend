@@ -1,64 +1,64 @@
-import Waazi from "../models/Waazi.js";
-import LibraryItem from "../models/LibraryItem.js";
 import { fetchChannelVideos, fetchLiveStream } from "./youtubeService.js";
 import { fetchRssFeed } from "./rssService.js";
 
-export async function aggregateFromYouTube({ apiKey, channels = [] }) {
-  const results = [];
-  for (const ch of channels) {
-    const videos = await fetchChannelVideos({ apiKey, channelId: ch.channelId, maxResults: ch.maxResults || 20 });
-    for (const v of videos) {
-      // Save into Library (video lectures)
-      await LibraryItem.updateOne(
-        { sourceUrl: v.sourceUrl },
-        {
-          $setOnInsert: {
-            title: v.title,
-            speaker: v.speaker,
-            type: "video",
-            sourceUrl: v.sourceUrl,
-            publishedAt: v.publishedAt ? new Date(v.publishedAt) : new Date()
-          }
-        },
-        { upsert: true }
-      );
-      results.push(v);
-    }
+// YouTube lectures
+export async function aggregateFromYouTube({ apiKey, channels }) {
+  let results = [];
+  for (const channelId of channels) {
+    console.log("📡 Fetching YouTube channel:", channelId);
+    const videos = await fetchChannelVideos({ apiKey, channelId });
+    // normalize zuwa LibraryItem format
+    const normalized = videos.map(v => ({
+      title: v.title,
+      speaker: v.channelTitle,
+      type: "video",
+      sourceUrl: v.url,
+      durationSec: v.durationSec,
+      publishedAt: v.publishedAt
+    }));
+    results = results.concat(normalized);
   }
   return results;
 }
 
-export async function aggregateFromRSS({ feeds = [] }) {
-  const saved = [];
-  for (const f of feeds) {
-    const items = await fetchRssFeed(f.url);
-    for (const it of items) {
-      const doc = await Waazi.updateOne(
-        { sourceUrl: it.sourceUrl },
-        {
-          $setOnInsert: {
-            title: it.title,
-            speaker: it.speaker,
-            dateTime: it.dateTime,
-            location: f.defaultLocation || "",
-            sourceUrl: it.sourceUrl,
-            sourceType: "rss",
-            tags: f.tags || []
-          }
-        },
-        { upsert: true }
-      );
-      if (doc.upsertedCount) saved.push(it);
-    }
+// RSS wa’azi
+export async function aggregateFromRSS({ feeds }) {
+  let results = [];
+  for (const url of feeds) {
+    console.log("📰 Fetching RSS feed:", url);
+    const items = await fetchRssFeed(url);
+    // normalize zuwa Waazi format
+    const normalized = items.map(i => ({
+      title: i.title,
+      speaker: i.creator || "Unknown",
+      dateTime: i.isoDate,
+      location: i.location || "",
+      sourceUrl: i.link,
+      sourceType: "rss",
+      tags: ["rss"]
+    }));
+    results = results.concat(normalized);
   }
-  return saved;
+  return results;
 }
 
-export async function aggregateLive({ apiKey, channels = [] }) {
-  const lives = [];
-  for (const ch of channels) {
-    const live = await fetchLiveStream({ apiKey, channelId: ch.channelId });
-    if (live) lives.push(live);
+// Live streams
+export async function aggregateLive({ apiKey, channels }) {
+  let lives = [];
+  for (const channelId of channels) {
+    console.log("🔴 Checking live stream for:", channelId);
+    const live = await fetchLiveStream({ apiKey, channelId });
+    if (live) {
+      lives.push({
+        title: live.title,
+        speaker: live.channelTitle,
+        dateTime: live.startTime,
+        location: live.location || "",
+        sourceUrl: live.url,
+        sourceType: "youtube",
+        tags: ["live"]
+      });
+    }
   }
   return lives;
 }
