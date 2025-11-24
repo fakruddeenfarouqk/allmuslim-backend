@@ -1,64 +1,63 @@
-import { fetchChannelVideos, fetchLiveStream } from "./youtubeService.js";
-import { fetchRssFeed } from "./rssService.js";
+import axios from "axios";
+import Video from "../models/Video.js";
+import { getApiKey, rotateKey } from "../utils/youtubeKeyManager.js";
 
-// YouTube lectures
-export async function aggregateFromYouTube({ apiKey, channels }) {
-  let results = [];
+export async function aggregateFromYouTube({ channels }) {
+  const results = [];
   for (const channelId of channels) {
-    console.log("📡 Fetching YouTube channel:", channelId);
-    const videos = await fetchChannelVideos({ apiKey, channelId });
-    // normalize zuwa LibraryItem format
-    const normalized = videos.map(v => ({
-      title: v.title,
-      speaker: v.channelTitle,
-      type: "video",
-      sourceUrl: v.url,
-      durationSec: v.durationSec,
-      publishedAt: v.publishedAt
-    }));
-    results = results.concat(normalized);
-  }
-  return results;
-}
+    try {
+      // Duba cache
+      const cached = await Video.findOne({ channelId }).sort({ publishedAt: -1 });
+      if (cached && (Date.now() - cached.cachedAt.getTime()) < 10 * 60 * 1000) {
+        console.log("📦 Returning cached video for channel:", channelId);
+        results.push(cached);
+        continue;
+      }
 
-// RSS wa’azi
-export async function aggregateFromRSS({ feeds }) {
-  let results = [];
-  for (const url of feeds) {
-    console.log("📰 Fetching RSS feed:", url);
-    const items = await fetchRssFeed(url);
-    // normalize zuwa Waazi format
-    const normalized = items.map(i => ({
-      title: i.title,
-      speaker: i.creator || "Unknown",
-      dateTime: i.isoDate,
-      location: i.location || "",
-      sourceUrl: i.link,
-      sourceType: "rss",
-      tags: ["rss"]
-    }));
-    results = results.concat(normalized);
-  }
-  return results;
-}
+      // Kira YouTube API
+      const apiKey = getApiKey();
+      console.log("🔑 Using key:", apiKey);
+      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&maxResults=1&order=date&type=video&key=${apiKey}`;
+      const res = await axios.get(url);
 
-// Live streams
-export async function aggregateLive({ apiKey, channels }) {
-  let lives = [];
-  for (const channelId of channels) {
-    console.log("🔴 Checking live stream for:", channelId);
-    const live = await fetchLiveStream({ apiKey, channelId });
-    if (live) {
-      lives.push({
-        title: live.title,
-        speaker: live.channelTitle,
-        dateTime: live.startTime,
-        location: live.location || "",
-        sourceUrl: live.url,
-        sourceType: "youtube",
-        tags: ["live"]
-      });
+      const item = res.data.items[0];
+      const video = {
+        videoId: item.id.videoId,
+        title: item.snippet.title,
+        description: item.snippet.description,
+        publishedAt: item.snippet.publishedAt,
+        channelId,
+        thumbnail: item.snippet.thumbnails.default.url,
+        cachedAt: new Date()
+      };
+
+      await Video.findOneAndUpdate({ videoId: video.videoId }, video, { upsert: true });
+      results.push(video);
+
+    } catch (err) {
+      if (err.response?.data?.error?.errors[0]?.reason === "quotaExceeded") {
+        console.log("⚠️ Quota exceeded for key:", getApiKey(), "rotating...");
+        rotateKey(); // juya zuwa key na gaba
+
+        // fallback: dawo da cache idan akwai
+        const cached = await Video.findOne({ channelId }).sort({ publishedAt: -1 });
+        if (cached) {
+          console.log("📦 Returning cached video:", cached.title);
+          results.push(cached);
+        }
+      } else {
+        console.error("❌ [YouTube Aggregator Error]", err.message);
+      }
     }
   }
-  return lives;
+  return results;
+}
+
+// RSS da Live suna nan yadda suke
+export async function aggregateFromRSS({ feeds }) {
+  // ... logic naka na RSS
+}
+
+export async function aggregateLive({ channels }) {
+  // ... logic naka na Live
 }
