@@ -6,7 +6,7 @@ export async function aggregateFromYouTube({ channels }) {
   const results = [];
   for (const channelId of channels) {
     try {
-      // Duba cache
+      // Duba cache (na channel ɗin da aka nema)
       const cached = await Video.findOne({ channelId }).sort({ publishedAt: -1 });
       if (cached && (Date.now() - cached.cachedAt.getTime()) < 10 * 60 * 1000) {
         console.log("📦 Returning cached video for channel:", channelId);
@@ -20,22 +20,36 @@ export async function aggregateFromYouTube({ channels }) {
       const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&maxResults=1&order=date&type=video&key=${apiKey}`;
       const res = await axios.get(url);
 
+      if (!res.data.items || res.data.items.length === 0) {
+        console.log("ℹ️ No videos found for channel:", channelId);
+        continue;
+      }
+
       const item = res.data.items[0];
+      if (!item.id?.videoId) {
+        console.log("⚠️ No videoId found in item for channel:", channelId);
+        continue;
+      }
+
       const video = {
         videoId: item.id.videoId,
         title: item.snippet.title,
         description: item.snippet.description,
         publishedAt: item.snippet.publishedAt,
         channelId,
-        thumbnail: item.snippet.thumbnails.default.url,
+        thumbnail: item.snippet.thumbnails?.default?.url || "",
         cachedAt: new Date()
       };
 
-      await Video.findOneAndUpdate({ videoId: video.videoId }, video, { upsert: true });
-      results.push(video);
+      const saved = await Video.findOneAndUpdate(
+        { videoId: video.videoId },
+        video,
+        { upsert: true, new: true }
+      );
+      results.push(saved);
 
     } catch (err) {
-      if (err.response?.data?.error?.errors[0]?.reason === "quotaExceeded") {
+      if (err.response?.data?.error?.errors?.[0]?.reason === "quotaExceeded") {
         console.log("⚠️ Quota exceeded for key:", getApiKey(), "rotating...");
         rotateKey(); // juya zuwa key na gaba
 
@@ -46,7 +60,7 @@ export async function aggregateFromYouTube({ channels }) {
           results.push(cached);
         }
       } else {
-        console.error("❌ [YouTube Aggregator Error]", err.message);
+        console.error("❌ [YouTube Aggregator Error]", err.response?.data || err.message);
       }
     }
   }
